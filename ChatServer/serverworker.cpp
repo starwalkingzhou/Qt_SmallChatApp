@@ -8,11 +8,22 @@ ServerWorker::ServerWorker(QObject *parent)
 {
     m_serverSocket = new QTcpSocket(this);
     connect(m_serverSocket,&QTcpSocket::readyRead,this,&ServerWorker::onReadyRead);
+    connect(m_serverSocket,&QTcpSocket::disconnected,this,&ServerWorker::disconnectedFromClient);
 }
 
 bool ServerWorker::setSocketDescripror(qintptr socketDescriptor)
 {
     return m_serverSocket->setSocketDescriptor(socketDescriptor);
+}
+
+QString ServerWorker::getUserName()
+{
+    return userName;
+}
+
+void ServerWorker::setUserName(QString user)
+{
+    userName = user;
 }
 
 void ServerWorker::onReadyRead()
@@ -25,10 +36,20 @@ void ServerWorker::onReadyRead()
         socketStream.startTransaction();
         socketStream>>jsonData;
         if(socketStream.commitTransaction()){
-            emit logMessage(QString::fromUtf8(jsonData));
-            sendMessage("I recieved message");
-        } else {
-        break;
+            // emit logMessage(QString::fromUtf8(jsonData));
+            // sendMessage("I recieved message");
+
+            QJsonParseError parseError;
+            const QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData, &parseError);
+            if(parseError.error ==QJsonParseError::NoError){
+
+                if(jsonDoc.isObject()){// and is a JsoN object
+                    emit logMessage(QJsonDocument(jsonDoc).toJson(QJsonDocument::Compact));
+                    emit jsonReceieved(this,jsonDoc.object());// parse the JsoN
+                }
+            }
+        }else {
+            break;
         }
     }
 }
@@ -48,5 +69,15 @@ void ServerWorker::sendMessage(const QString &text, const QString &type)
         // send the JsoN using QDatastream
         serverstream<<QJsonDocument(message).toJson();
     }
+}
+
+void ServerWorker::sendJson(const QJsonObject &json)
+{
+    const QByteArray jsonData =QJsonDocument(json).toJson(QJsonDocument::Compact);
+    emit logMessage(QLatin1String("Sending to ")+ getUserName()+QLatin1String(" - ")+
+                    QString::fromUtf8(jsonData));
+    QDataStream socketStream(m_serverSocket);
+    socketStream.setVersion(QDataStream::Qt_5_7);
+    socketStream<<jsonData;
 }
 
